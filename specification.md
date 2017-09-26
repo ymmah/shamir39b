@@ -197,7 +197,7 @@ shamir39b arrive arrive owner garlic flee outside become buddy mule foam captain
 
 ## Example Implementation
 
-Web app - https://rkagerer.github.io/shamir39b/
+Web app - https://rkagerer.github.io/shamir39b/standalone.html
 
 Library and source code - refer to Ian's original https://github.com/iancoleman/shamir39/ from which this project is forked - see src/js/shamirMnemonic.js
 
