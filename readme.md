@@ -5,7 +5,7 @@ Please don't use this tool for real.  It's under development and THINGS WILL BRE
 
 ## Online Version
 
-https://rkagerer.github.io/shamir39b/
+https://rkagerer.github.io/shamir39b/standalone.html
 
 ## Standalone offline version
 
