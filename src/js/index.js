@@ -10,12 +10,14 @@
 
     var DOM = {};
     DOM.splitPhrase = $("#split-phrase");
+    DOM.splitPassphrase = $("#split-passphrase");
     DOM.parameterM = $(".parameter-m");
     DOM.parameterN = $(".parameter-n");
     DOM.splitParts = $("#split-parts");
     DOM.generatedStrength = $(".generate-container .strength");
     DOM.combineParts = $("#combine-parts");
     DOM.combinePhrase = $("#combine-phrase");
+    DOM.combinePassphrase = $("#combine-passphrase");
     DOM.generateContainer = $(".generate-container");
     DOM.generate = $(".generate");
     DOM.languages = $(".languages a");
@@ -24,6 +26,7 @@
     function init() {
         // Events
         DOM.splitPhrase.on("input", delayedPhraseChanged);
+        DOM.splitPassphrase.on("input", delayedPhraseChanged);
         DOM.parameterM.on("input", delayedPhraseChanged);
         DOM.parameterN.on("input", delayedPhraseChanged);
         DOM.generate.on("click", generateClicked);
@@ -48,13 +51,14 @@
         setMnemonicLanguage();
         // Get the mnemonic phrase
         var phrase = DOM.splitPhrase.val();
-        var errorText = findPhraseErrors(phrase);
+        var passphrase = DOM.splitPassphrase.val();
+        var errorText = findPhraseErrors(phrase, passphrase);
         if (errorText) {
             showValidationError(errorText);
             return;
         }
         // Calculate and display
-        showSplitPhrase(phrase);
+        showSplitPhrase(phrase, passphrase);
         hidePending();
     }
 
@@ -92,13 +96,13 @@
 
     // Private methods
 
-    function showSplitPhrase(phrase) {
+    function showSplitPhrase(phrase, passphrase) {
         var words = phraseToWordArray(phrase);
         var m = parseInt(DOM.parameterM.val());
         var n = parseInt(DOM.parameterN.val());
         var language = getLanguage(phrase);
         var wordlist = WORDLISTS[language];
-        var parts = shamir39.split(words, wordlist, m, n);
+        var parts = shamir39.split(words, passphrase, wordlist, m, n);
         if ("error" in parts) {
             DOM.splitParts.val(parts.error);
             return;
@@ -140,6 +144,7 @@
         }
         var phrase = wordArrayToPhrase(words.mnemonic);
         DOM.combinePhrase.val(phrase);
+        DOM.combinePassphrase.val(words.passphrase);
     }
 
     function generateRandomPhrase() {
@@ -179,7 +184,8 @@
             .hide();
     }
 
-    function findPhraseErrors(phrase) {
+    function findPhraseErrors(phrase, passphrase) {
+        if (phrase.length == 0 && passphrase.length > 0) return false; // skip if all we're doing is encrypting from freeform text
         // Preprocess the words
         phrase = mnemonic.normalizeString(phrase);
         var words = phraseToWordArray(phrase);

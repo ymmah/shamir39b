@@ -2,11 +2,12 @@
 <html>
     <head lang="en">
         <meta charset="utf-8" />
-        <title>Shamir39 - Mnemonic Code Splitter</title>
+        <title>Shamir39b - Mnemonic Code Splitter</title>
         <link rel="stylesheet" href="css/bootstrap.min.css">
         <meta content="Split mnemonic codes into sharable parts" name="description"/>
         <meta content="width=device-width, initial-scale=1.0" name="viewport" />
         <meta content="Ian Coleman" name="author" />
+        <meta content="rkagerer" name="author" />
         <link type="image/x-icon" rel="icon" href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVRIx2NgGAWjYBSMglEwCkbBSAcACBAAAeaR9cIAAAAASUVORK5CYII=" />
 
         <style>
@@ -16,6 +17,27 @@
             .form-control[readonly] {
                 cursor: text;
             }
+            /*
+                TODO: Fix vertical alignment of wrapped labels (https://imgur.com/a/HYkZw)
+                Leads:
+                - https://scotch.io/quick-tips/different-tricks-on-how-to-make-bootstrap-columns-all-the-same-height#toc-option-3-using-a-negative-margin-and-huge-padding-trick
+                - https://stackoverflow.com/questions/29968859/bootstrap-vertically-center-label-in-form-group
+               Below are attempts that didn't work:
+            .control-label {
+                vertical-align: middle !important;
+            }
+            .form-control {
+                vertical-align: :middle;
+            }
+            .row.match-my-cols {
+                overflow: hidden; 
+            }
+
+            .row.match-my-cols [class*="col-"]{
+                margin-bottom: -99999px !important;
+                padding-bottom: 99999px !important;
+            }
+            */
             .feedback-container {
                 position: fixed;
                 top: 0;
@@ -56,6 +78,10 @@
             .phrase {
                 word-break: keep-all;
             }
+            .passphrase {
+                resize: horizontal;
+                white-space: nowrap;
+            }
             .text-extreme-danger {
                 color: #F00;
             }
@@ -76,10 +102,10 @@
 
             <div class="text-center text-extreme-danger">
             <p class="h1">
-            <strong>This is a prototype.</strong>
+            <strong>This is a prototype forged from a prototype.</strong>
             </p>
             <p class="h2">
-            This tool should only be used for experiments.
+            It should ONLY be used for experiments. It is an adaptation of Ian's original work and under development. THINGS WILL BREAK.
             </p>
             <p class="h2">
             There are no alternative implementations, meaning you are
@@ -87,15 +113,15 @@
             That is a dangerous situation to be in.
             </p>
             <p class="h2">
-                <a href="https://github.com/iancoleman/shamir39/issues">
-                Please share questions, comments and concerns on github
+                <a href="https://github.com/rkagerer/shamir39/issues">
+                <strike>Please share questions, comments and concerns on github</strike>
                 </a>
             </p>
             </div>
 
             <hr>
 
-            <h1 class="text-center">Shamir39 Tool</h1>
+            <h1 class="text-center">Shamir39b Tool</h1>
             <div class="split row">
                 <div class="col-md-12">
                     <h2>Split</h2>
@@ -108,9 +134,7 @@
                                         <span>Generate a random mnemonic, or enter your own below</span>:
                                         <button class="btn generate">Generate</button>
                                         <select id="strength" class="strength form-control">
-                                            <option value="3">3</option>
-                                            <option value="6">6</option>
-                                            <option value="9">9</option>
+                                            <option value="0">0</option>
                                             <option value="12">12</option>
                                             <option value="15" selected>15</option>
                                             <option value="18">18</option>
@@ -143,6 +167,12 @@
                             </div>
                         </div>
                         <div class="form-group">
+                            <label for="split-passphrase" class="col-sm-2 control-label">Passphrase (Optional)</label>
+                            <div class="col-sm-10">
+                                <textarea id="split-passphrase" class="passphrase form-control" rows="1"></textarea>
+                            </div>
+                        </div>
+                        <div class="form-group">
                             <label class="col-sm-2 control-label">Split Parameters</label>
                             <div class="col-sm-10">
                                 <div class="form-inline">
@@ -155,7 +185,7 @@
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="split-parts" class="col-sm-2 control-label">Shamir39 Shares</label>
+                            <label for="split-parts" class="col-sm-2 control-label">Shamir39b Shares</label>
                             <div class="col-sm-10">
                                 <textarea id="split-parts" class="parts form-control" readonly></textarea>
                             </div>
@@ -171,7 +201,7 @@
                     <h2>Combine</h2>
                     <form class="form-horizontal" role="form">
                         <div class="form-group">
-                            <label for="combine-parts" class="col-sm-2 control-label">Shamir39 Shares</label>
+                            <label for="combine-parts" class="col-sm-2 control-label">Shamir39b Shares</label>
                             <div class="col-sm-10">
                                 <textarea id="combine-parts" class="parts form-control"></textarea>
                             </div>
@@ -180,6 +210,12 @@
                             <label for="combine-phrase" class="col-sm-2 control-label">BIP39 Mnemonic</label>
                             <div class="col-sm-10">
                                 <textarea id="combine-phrase" class="phrase form-control" readonly></textarea>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="combine-passphrase" class="col-sm-2 control-label">Passphrase</label>
+                            <div class="col-sm-10">
+                                <textarea id="combine-passphrase" class="passphrase form-control" rows="1" readonly></textarea>
                             </div>
                         </div>
                     </form>
@@ -191,15 +227,17 @@
             <div class="row">
                 <div class="col-md-12">
                     <h2>More Info</h2>
-                    <h3>Shamir39 <span class="small">Draft Specification</span></h3>
+                    <h3>Shamir39b <span class="small">Draft Specification</span></h3>
                     <p>
-                        Read more about how Shamir Mnemonics are encoded and decoded in the
-                        <a href="https://github.com/iancoleman/shamir39/blob/master/specification.md" target="_blank">Draft Shamir39 Specification</a>.
+                        More information about Shamir39b can be found at the
+                        <a href="https://github.com/rkagerer/shamir39b/blob/master/specification.md" target="_blank">Draft Shamir39b Specification</a>.
+                        There is no plan at the moment to formalize this flavour of the spec; it's only intended as a documentation aid and means to explore possible permutations of Ian's current proposal.
                     </p>
                     <p>
-                        The specification is open to feedback.
-                        Feedback can be provided by raising a new issue in the
-                        <a href="https://github.com/iancoleman/shamir39/issues" target="_blank">github repostiory iancoleman/shamir39</a>.
+                        Ian's original specification can be found at the
+                        <a href="https://github.com/iancoleman/shamir39/blob/master/specification.md" target="_blank">Draft Shamir39 Specification</a>,
+                        and he welcomes feedback which can be provided by raising a new issue in his repository.  Please don't open issues relating to
+                        the Shamir39b experiment as it is not supported.
                     </p>
                     <h3>BIP39 <span class="small">Mnemonic code for generating deterministic keys</span></h3>
                     <p>
@@ -217,8 +255,8 @@
                     </p>
                     <p>
                         The implementation used on this page can be found in
-                        <a href="https://github.com/iancoleman/shamir39/blob/master/src/js/shamir39.js" target="_blank">Shamir39 Library</a>
-                        (currently under active development).
+                        <a href="https://github.com/rkagerer/shamir39b/blob/master/src/js/shamir39.js" target="_blank">Shamir39b Library</a>
+                        (currently under development).
                     </p>
                 </div>
             </div>
@@ -244,7 +282,7 @@
                     <p>
                     <span>Alternatively, download the file from the repository</span>
                     -
-                    <a href="https://github.com/iancoleman/shamir39">https://github.com/iancoleman/shamir39</a>
+                    <a href="https://github.com/rkagerer/shamir39b">https://github.com/rkagerer/shamir39b</a>
                     </p>
 
                 </div>
@@ -260,19 +298,12 @@
                     <p>
                         <span>Get the source code from the repository</span>
                         -
-                        <a href="https://github.com/iancoleman/shamir39" target="_blank">
-                            https://github.com/iancoleman/shamir39
+                        <a href="https://github.com/rkagerer/shamir39b" target="_blank">
+                            https://github.com/rkagerer/shamir39b
                         </a>
                     </p>
 
                     <h3>Libraries</h3>
-
-                    <p>
-                        <span>Shamir39 Library (under development) - </span>
-                        <a href="https://github.com/iancoleman/shamir39/blob/master/src/js/shamir39.js" target="_blank">
-                            https://github.com/iancoleman/shamir39/blob/master/src/js/shamir39.js
-                        </a>
-                    </p>
 
                     <p>
                         <span>jsBIP39 - </span>

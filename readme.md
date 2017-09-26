@@ -1,10 +1,11 @@
-# Shamir39 Tool
+# Shamir39b Tool
 
-A tool for converting BIP39 mnemonic phrases to shamir secret sharing scheme parts whilst retaining the benefit of mnemonics.
+An EXPERIMENTAL tool for converting BIP39 mnemonic phrases to shamir secret sharing scheme parts whilst retaining the benefit of mnemonics.
+Please don't use this tool for real.  It's under development and THINGS WILL BREAK.
 
 ## Online Version
 
-https://iancoleman.github.io/shamir39/
+https://rkagerer.github.io/shamir39b/
 
 ## Standalone offline version
 
@@ -13,6 +14,10 @@ Download `standalone.html`
 Open the file in a browser by double clicking it.
 
 This can be compiled from source using the command `python compile.py`
+
+## Original Version (under active development)
+
+https://iancoleman.github.io/shamir39/
 
 ## Usage
 
@@ -53,5 +58,5 @@ TODO
 
 # License
 
-This Shamir39 tool is released under the terms of the MIT license. See LICENSE for
+This Shamir39b tool is released under the terms of the MIT license. See LICENSE for
 more information or see https://opensource.org/licenses/MIT.

@@ -1,10 +1,11 @@
 Shamir39 = function() {
 
-    var VERSION = "shamir39";
+    var VERSION = "shamir39b";
+    var VALID_LENGTHS = [0, 12, 15, 18, 21, 24];
 
-    // Splits a BIP39 mnemonic into Shamir39 mnemonics.
-    // No validation is done on the bip39 words.
-    this.split = function(bip39MnemonicWords, wordlist, m, n) {
+    // Splits a BIP39 mnemonic and optional passphrase into Shamir39b mnemonics.
+    // Validation on the bip39 words is minimal (expected count, in wordlist)
+    this.split = function(bip39MnemonicWords, passphrase, wordlist, m, n) {
         // validate inputs
         if (m < 2) {
             return {
@@ -32,10 +33,21 @@ Shamir39 = function() {
                 error: "Wordlist must have 2048 words"
             };
         }
-        if (bip39MnemonicWords.length == 0) {
+        if (bip39MnemonicWords.length == 0 && passphrase.length == 0) {
             return {
-                error: "No bip39 mnemonic words provided"
+                error: "No bip39 mnemonic words or passphrase provided"
             };
+        }
+        if (VALID_LENGTHS.indexOf(bip39MnemonicWords.length) < 0) {
+            return {
+                error: "Mnemonic must consist of " + VALID_LENGTHS.slice(0, VALID_LENGTHS.length - 1).join(", ") + " or "
+                        + VALID_LENGTHS[VALID_LENGTHS.length - 1] + " words"
+            };            
+        }
+        if (passphrase.length > 256) { // totally arbitrary
+            return {
+                error: "Passphrases longer than 256 characters not supported"
+            }
         }
         // convert bip39 mnemonic into bits
         var binStr = "";
@@ -48,13 +60,25 @@ Shamir39 = function() {
                     error: errorMsg
                 };
             }
-            var bits = index.toString(2);
+            var bits = index.toString(2); // convert to base 2
             bits = lpad(bits, 11);
             binStr = binStr + bits;
         }
-        // pad mnemonic for use as hex
-        var lenForHex = Math.ceil(binStr.length / 4) * 4;
-        binStr = lpad(binStr, lenForHex);
+        // calculate 3-bit code representing mnemonic word count
+        var prefix = 0;
+        if (bip39MnemonicWords.length > 0) {
+            prefix = (bip39MnemonicWords.length - 9) / 3;
+        }
+        // append passphrase
+        binStr += encodeStr(passphrase);
+        // apply padding for use as hex
+        var lenForHex = Math.ceil((binStr.length + 5) / 4) * 4; // +5 to account for prefix to be added
+        var padding = lenForHex - (binStr.length + 5);
+        // RKTODO: For debugging/testing, assert padding is <  4.  Should always be.
+        binStr = "0".repeat(padding) + binStr;
+        // prefix with padding count and mnemonic word count code
+        binStr = lpad(prefix.toString(2), 3) + binStr;
+        binStr = lpad(padding.toString(2), 2) + binStr;
         // convert to hex string
         var totalHexChars = binStr.length / 4;
         var hexStr = "";
@@ -174,8 +198,32 @@ Shamir39 = function() {
         }
         // combine parts into secret
         var secretHex = combine(hexParts);
-        // convert secret into mnemonic
+        // convert secret into binary
         var secretBin = hex2bin(secretHex);
+        var orgSecretBin = secretBin; // for debugging; since we'll overwrite the latter below in order to avoid extra diff lines in this code fork
+        // read padding length
+        var padLenBin = secretBin.substring(0, 2);
+        var padLen = parseInt(padLenBin, 2); // RKTODO: Improve validation to ensure we have enough bits
+        // read 3-bit prefix containing word count
+        var prefix = secretBin.substring(padLenBin.length, padLenBin.length + 3);
+        var wcount = parseInt(prefix, 2);
+        var totalWords = 0;
+        if (wcount > 0) {
+            totalWords = 3 * wcount + 9;
+        }
+        if (VALID_LENGTHS.indexOf(totalWords) < 0) {
+            return {
+                error: "Unsupported mnemonic word count of " + totalWords
+            }
+        }
+        // discard prefix and padding
+        secretBin = secretBin.substring(prefix.length + padLenBin.length + padLen);
+        // extract and truncate passphrase if it exists
+        var passphraseBin = secretBin.substring(totalWords * 11);
+        secretBin = secretBin.substring(0, totalWords * 11);
+        // decode passphrase
+        var passphrase = decodeStr(passphraseBin);
+        // convert secret into mnemonic
         var totalWords = Math.floor(secretBin.length / 11);
         var totalBits = totalWords * 11;
         var diff = secretBin.length - totalBits;
@@ -188,7 +236,8 @@ Shamir39 = function() {
             mnemonic.push(word);
         }
         return {
-            mnemonic: mnemonic
+            mnemonic: mnemonic,
+            passphrase: passphrase
         };
     }
 
@@ -740,6 +789,177 @@ Shamir39 = function() {
         }
         return out;
     };
+
+    // RKTODO: Move below out to separate string encoding js
+    // RKTODO: Get a code review of ASCII 7-bit stuff, do some unit testing on different-endianned machine, verify dependencies like
+    //         parseInt, toString(, 2), etc. don't do any tricks under the hood that haven't been accounted for.
+    // RKTODO: Maybe all this BOM stuff was overkill.  Could just use an FF marker (ASCII7 "{DEL}") to denote UTF16 and save
+    //         foreign users some bits.  Or be dynamic; measure maximum character and use first 4 bits to tell you how many bits to
+    //         use per character.  Could offset ASCII table so simple english passphrases (made up of only letters, numbers and the
+    //         2 most popular symbols) would only take up 6 bits per letter.
+
+    // UTF-16 Byte Order Marker and corresponding bit representations (both big / little endian)
+    const BOM          = [0xFF, 0xFE];
+    const BOM_BITS     = BOM[0].toString(2) + BOM[1].toString(2); // 1111111111111110
+    const BOM_REV_BITS = BOM[1].toString(2) + BOM[0].toString(2); // 1111111011111111
+    const MAX_BITS_PER_CHAR = 32; // generic str2bin and bin2str accomodate up to UTF-32
+
+    function encodeStr(str){
+        var out;
+        var ascii = isCompatibleASCII(str);
+        var bitsPerChar = ascii ? 7 : 16;
+        out = str2bin(str, bitsPerChar);
+        if (!ascii) {
+            out = BOM_BITS + out;
+        }
+        return out;
+    }
+
+    function decodeStr(bin){
+        var bitsPerChar;
+        if(detectUTF16(bin)){ // throws an error if invalid or can't detect
+            bitsPerChar = 16;
+            bin = bin.substring(BOM_BITS.length); // drop the UTF-16 indicator
+        }else{
+            bitsPerChar = 7;
+        }
+        if (bin.length % bitsPerChar != 0){
+            throw new Error('Binary string is not the expected length')
+        }
+        return bin2str(bin, bitsPerChar);
+    }
+
+    // Returns true if the blob begins with a big-endian BOM and looks like UTF-16.
+    // Returns false if it looks like 7-bit ASCII.
+    // Throws an error if it doesn't look like either.
+    function detectUTF16(bin){
+        // Detect Unicode
+        if (bin.length >= BOM_BITS.length) {
+            if (bin.startsWith(BOM_BITS)) {
+                // Treat as UTF-16
+                if ((bin.length - BOM_BITS.length) % 16 != 0) {
+                    throw new Error('Corrupt UTF-16 content detected');
+                } else {
+                    return true;
+                }
+            } else if (bin.startsWith(BOM_REV_BITS)) {
+                throw new Error('Reversed UTF-16 byte order marker detected');
+            }
+        }
+        // Treat as 7-bit ASCII
+        if (bin.length % 7 != 0) {
+            throw new Error('Unable to decode corrupted text');
+        }
+        return false;
+    }
+
+    // Checks if given string consists solely of ASCII characters (excluding extended; i.e. just 0 through 127)
+    function isASCII(str){
+        for(var i=0; i<str.length; i++){
+            if(str.charCodeAt(i) > 127){
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Verifies the given string can be encoded into 7-bit ASCII characters without resulting in a binary
+    // sequence that's ambiguous to decode.
+    function isCompatibleASCII(str){
+        // Here's how various byte order markers would look if read from a binary blob and interpreted as 7-bit ASCII:
+        // ORIGINAL ENCODING        BYTES    BITS (SEPTETS)                DECODED TO ASCII 7-BIT
+        // UTF-16 (big endian)      FEFF     1111111 0111111 11            "{DEL}{?}" + exta 2 bits
+        // UTF-16 (little endian)   FFFE     1111111 1111111 10            "{DEL}{DEL}" + extra 2 bits
+        // UTF-8                    EFBBBF   1110111 1101110 1110111 111   "wnw" + extra 3 bits
+        // Generate the ASCII characters BOM would decode to
+        var bom1 = parseInt(BOM_BITS.substring(0, 7), 2);
+        var bom2 = parseInt(BOM_BITS.substring(7, 14), 2);
+        var bom_asc = String.fromCharCode(bom1) + String.fromCharCode(bom2);
+        var bom_rev_asc = String.fromCharCode(bom2) + String.fromCharCode(bom1);
+        if (!isASCII(str)) return false;
+        if (str.startsWith(bom_asc) || str.startsWith(bom_rev_asc)) return false;
+        return true;
+    }
+
+    // Converts a given UTF16 character string to its binary representation.
+    // Each character of the input string is represented by `bitsPerChar` bits in the output string.
+    function str2bin(str, bitsPerChar){
+        validateStr(str, "Input", undefined, undefined, 'a text string');
+        validateInt(bitsPerChar, 'Bits per character', 1, MAX_BITS_PER_CHAR);
+        var max = Math.pow(2, bitsPerChar) - 1; // e.g. evaluates to 127 for 7-bit ASCII
+        var out = '', num;
+        for(var i=0; i<str.length; i++){
+            num = str.charCodeAt(i);
+            if(isNaN(num)){
+                throw new Error('Invalid character: ' + str[i]);
+            }else if(num > max){
+                var neededBits = Math.ceil(Math.log(num+1)/Math.log(2));
+                throw new Error('Invalid character code (' + num + '). Maximum allowable is 2^bits-1 (' + max + '). ' +
+                                'To convert this character, use at least ' + neededBits + ' bits.')
+            }else{
+                out += lpad(num.toString(2), bitsPerChar);
+            }
+        }
+        return out;
+    }
+
+    // Converts a given binary character string to a UTF16 character string.
+    function bin2str(bin, bitsPerChar){
+        validateStr(bin, "Input", undefined, undefined, 'a binary string');
+        validateInt(bitsPerChar, 'Bits per character', 1, MAX_BITS_PER_CHAR);
+        var out = '';
+        bin = padLeft(bin, bitsPerChar);
+        for(var i=0; i<bin.length; i+=bitsPerChar){
+            out += String.fromCharCode(parseInt(bin.slice(i, i+bitsPerChar), 2));
+        }
+        return out;
+    }
+
+    //function reverseStr(str){
+    //    return str.split('').reverse().join('');
+    //}
+
+    // Validates given value is an integer, with optional min / max limits.
+    // Throws an error if num is invalid, otherwise permits execution to continue.
+    // param should be the parameter name or a short, human-readable description of what represents.
+    function validateInt(num, param, min, max){
+        if (typeof min === 'undefined') min = undefined;
+        if (typeof max === 'undefined') max = undefined;
+        var msg = param + ' must be an integer';
+        if      (min !== undefined && max !== undefined) msg += ' between ' + min + ' and ' + max + ', inclusive';
+        else if (min !== undefined && max === undefined) msg += ' greater than or equal to ' + min;
+        else if (min === undefined && max !== undefined) msg += ' less than or equal to ' + max;
+        if(typeof num !== 'number' || num%1 !== 0 || min !== undefined && num<min || max !== undefined && num>max){
+            throw new Error(msg)
+        }
+    }
+
+    // Validates given value is a string, with optional min / max length.
+    // Throws an error if str is invalid, otherwise permits execution to continue.
+    // param should be the parameter name or a short, human-readable description of what represents.
+    // desc can optionally be a short, human-readable description of the intended content.
+    function validateStr(str, param, min, max, desc){
+        if (typeof min === 'undefined') min = undefined;
+        if (typeof max === 'undefined') max = undefined;
+        if (typeof desc === 'undefined') desc = undefined;
+        var msg = param + ' must be ' + (desc === undefined ? 'a string' : desc);
+        var len = str.length;
+        if      (min !== undefined && max !== undefined && min == max)
+                                                         msg += ' exactly ' + min + ' characters long';
+        if      (min !== undefined && max !== undefined) msg += ' between ' + min + ' and ' + max + ' characters long, inclusive';
+        else if (min !== undefined && max === undefined) msg += ' of at least ' + min + ' characters';
+        else if (min === undefined && max !== undefined) msg += ' of no more than ' + max + ' characters';
+        if(typeof str !== 'string' || min !== undefined && len<min || max !== undefined && len>max){
+            throw new Error(msg)
+        }
+    }
+
+    // Polyfill for older browsers (https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/startsWith#Polyfill)
+    if(!String.prototype.startsWith){
+        String.prototype.startsWith = function(searchString, position){
+            return this.substr(position || 0, searchString.length) === searchString;
+        };
+    }
 
     init(12); // 12 bits = 4096-1 shares maximum
 

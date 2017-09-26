@@ -1,24 +1,51 @@
-# Shamir Mnemonics Specification
+# Shamir Mnemonics Specification (shamir39b)
 
 # DRAFT
 
 ## Motivation
 
-BIP39 Mnemonics are a simple way to back up an entire wallet. The downside of mnemonics is if they're shared with others the private keys may be compromised from lack of security of those it's shared with.
+BIP39 mnemonics provide a simple, human-readable backup of an entire wallet. But a challenge to securely storing the backup is that anyone with a copy of the mnemonic gains access to the funds.
 
-Splitting a secret into components using Shamir's Secret Sharing Scheme (SSSS) alleviates this risk, but the benefit of using human readable words is lost since secrets are typically encoded in a binary format.
+[Shamir's Secret Sharing Scheme](https://en.wikipedia.org/wiki/Shamir%27s_Secret_Sharing) (SSSS) alleviates this risk by securely dividing sensitive data into pieces which can be distributed among trusted parties such that several must be combined to reconstruct the original message. But with existing tooling, the benefit of using human readable words is lost as the output is typically encoded into sequences of hexadecimal "gibberish".
 
-This proposal is a way to split a BIP39 mnemonic into parts via SSSS without losing the benefits of the original mnemonic encoding. This is achieved by encoding the SSSS shares as mnemonics themselves, which can then be distributed to others with much lower risk of the private keys of the original mnemonic being compromised or lost.
+This proposal is a way to split a BIP39 mnemonic into pieces via SSSS while maintaining the benefits of the original mnemonic encoding. This is achieved by encoding the SSSS shares themselves as mnemonics, which can then be distributed to others with reduced risk of private keys being exposed or lost if one or a few shares are compromised or misplaced.
 
-## Components
+## Version
 
-Shamir Mnemonics are encoded into 3 components - the Version, the Parameters, and the Shamir Share.
+This specification, referred to as "shamir39b", is a modification to the original [shamir39](https://github.com/iancoleman/shamir39/blob/master/specification.md) specification proposed by Ian Coleman.  It adds the ability to include freeform text alongside the original wallet seed mnemonic, which can be used for storing a passphrase ("25th" seed word), safe code, or other small amount of secret information which will be revealed when the pieces are combined.
+
+## Operation
+
+The original BIP39 mnemonic you type in is converted to its binary representation.
+
+A 5 bit prefix is constructed as follows:
+
+- First 2 bits: Indicates number of padding bits.
+- Next 3 bits: Indicates number of mnemonic words present, as follows: 000 = 0 words, 001 = 12 words, 010 = 15 words, 011 = 18 words, 100 = 21 words, 101 = 24 words.  i.e. 0 for none, otherwise # words = value * 3 + 9.  For now, values of 110 and 111 are reserved).
+
+Next come the padding bits (between zero and 3 of them).  These are required to ensure the secret ends on a 4-bit boundary suitable for conversion to hexadecimal format.
+
+Then the bits corresponding to the mnemonic you are splitting (exactly 11 bits per word).
+
+Finally, the remaining bits are the passphrase (if there is one).  If you only used ASCII characters (0 to 127) they are encoded as 7 bits per character.  If you used any characters outside of this range, then the passphrase instead begins with a standard UTF-16 Byte Order Marker (0xFF 0xFE) followed by 16 bits per character in your passphrase.
+
+All of the bits above make up your secret, which is converted to hex and fed into an SSSS algorithm to create shares.
+
+The generated shares are then wrapped with some additional indicators to aid in reconstruction (below) and finally converted to BIP39 mnemonics.
+
+No additional checkdigits are implemented at present, but it's being discussed.
+
+The structure used in Shamir39b was hacked together in a hurry and will likely change.
+
+## Share Components
+
+Each share produced consists of 3 components: Version, Parameters, and the Shamir Share.
 
 The encoded components are concatenated together to form a Shamir Mnemonic.
 
 ### First Component is Version
 
-The first component is the single word shamir39.
+The first component is the single word shamir39b.
 
 This prevents mixing incompatible mnemonics and allows upgrading the implementation in the future.
 
@@ -96,6 +123,7 @@ The third component is the data for the shamir share and is a binary blob which 
 The binary shamir share is encoded to mnemonic words by:
 
 - left pad the binary share to multiple of 11 bits
+- 3 of the extra 4 bits record how many triplets of words are in the secret mnemonic (0 = 3, 1 = 6, ...., 7 = 24)
 - convert each group of 11 bits to the corresponding word in the wordlist
 
 The mnemonic words are decoded to the binary shamir share by:
@@ -105,49 +133,73 @@ The mnemonic words are decoded to the binary shamir share by:
 
 ## Alternatives
 
+The [original Shamir39](https://github.com/iancoleman/shamir39) scheme is probably more actively developed / supported.
+
 A scheme such as BIP45 (HD multisig wallets) targets separation of secrets at the transaction layer, whereas this proposal targets the key storage layer. Multisig wallets have the benefit of not requiring the secrets to be merged, ie a transaction can be signed progressively in isolation by each party until enough signatures have been accumulated to broadcast the transaction. In contrast, SSSS requires parties to combine their secrets into a single secret, which must then be handled by a 'leader' of the group to finally sign any transactions using the combined secret.
 
 ## Testing
 
 ### Initial Data
 
-Original mnemonic split into 3 of 5
+Original mnemonic:
 
 ```
-abandon abandon ability
+what secret hair silly plate web thank purchase oxygen smart pass town
 ```
 
-Parts (presented in correct order)
+Original passphrase:
 
 ```
-shamir39 army achieve visa couch actress sand
-shamir39 around acid clutch drastic camera festival
-shamir39 arrange ability summer increase carbon tuition
-shamir39 arrest above fix wonder name arrange
-shamir39 arrive access pumpkin social mosquito rebuild
+Thundertown
+```
+
+Split into 3-of-5.  Resulting parts (presented in correct order):
+
+```
+shamir39b army assume veteran east report thrive amount fade arrow obey energy wagon title cushion deer clever lava woman abandon push settle scheme
+
+shamir39b around barrel angle mirror artwork limb also february undo hidden energy team pupil lend puppy song combine protect seminar auction oil pitch
+
+shamir39b arrange busy toddler cradle junk anger side photo blush cash purchase repeat logic truck illegal equal essence twin vapor damage crane body
+
+shamir39b arrest accident intact together coach belt spy tunnel gown banana ship feel sausage issue lawsuit morning veteran flash orbit window later elder
+
+shamir39b arrive arrive owner garlic flee outside become buddy mule foam captain devote mushroom there patrol art near cabbage poverty secret strategy when
 ```
 
 ### Tests
 
 * Splitting:
-    * The original mnemonic can be split into multiple shares
+    * The original mnemonic and passphrase can be split into multiple shares
     * None of the shares are identical to the original mnemonic
-    * Each share starts with the version 'shamir39'
-* Combining: Shares 1, 2 and 3 combine to the original mnemonic
-* Ordering: Shares 5, 4 and 3 combine to the original mnemonic
+    * Each share starts with the version 'shamir39b'
+* Combining: Shares 1, 2 and 3 combine to the original mnemonic and passphrase
+* Ordering: Shares 5, 4 and 3 combine to the original mnemonic and passphrase
 * Not enough shares: The original cannot be recovered with only 2 shares
+* Unicode / foreign-language characters supported
+* Empty mnemonic supported (for just splitting a passphrase or whatever arbitrary text)
 
 ### Further Tests TBD
 
 * Large number of shares (ie greater than 32)
 * Encoding of parameters across multiple words
 * Upper limit of shares (in the prototype implementation it's 4095)
+* More...
+
+### Advantages
+
+- Put all the secret codes your heirs need to recover your wallet in a single place.  Eliminates confusion that might occur if you were to apply Shamir Sharing separately to the seed and passphrase and make them figure out which ones need to be combined in which groupings.
+
+## Disadvantages
+
+- It's possible to infer rough information about the size of your secret (i.e. lots of words in the shares indicates existence of a passphrase).  In other words, you need to have some basic trust in the people to whom you distribute the shares.  Also compromises deniability.
+- You are keeping the wallet seed and passphrase tied together (i.e. if one is compromised the other probably will be as well) which may not be good depending on your security stance.
 
 ## Example Implementation
 
-Web app - https://iancoleman.github.io/shamir39/
+Web app - https://rkagerer.github.io/shamir39b/
 
-Library and source code - https://github.com/iancoleman/shamir39/ - see src/js/shamirMnemonic.js
+Library and source code - refer to Ian's original https://github.com/iancoleman/shamir39/ from which this project is forked - see src/js/shamirMnemonic.js
 
 ## References
 
